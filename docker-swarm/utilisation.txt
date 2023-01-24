@@ -1,0 +1,419 @@
+
+
+eazytraning labs : 2h
+http://docker.labs.eazytraining.fr
+login : devops
+pawwd : devops
+
+
+katakoda labs : 1h
+https://www.katacoda.com/courses/docker-orchestration/playground 
+
+ou sur ma propre infra :
+VM master et VM workers, hyper-v 
+
+exemple d'orchestateur 
+amazon-ecs, kubernetess, docker-swarm
+
+N master et P workers 
+le quorum : quand le quorum est atteint, les manager ne traitent plus de nouvelles demandes. mpais les tâches en cours continuerons.
+quorum = partie entière de [ (nombre de noeuds / 2) + 1 ]
+
+si (nombre de noeuds disponible est <= quorum) alors les manageurs de cluster ne prennent plus de nouvelles taches à envoyer
+
+- Il faut commencer un clusteur hautement disponible à partir de 3 noeuds (noeuds manajeur ou master )
+- aussi il est conseillé de choisir un nombre impaires de noeud master 
+
+- les port de communication 
+-- communication interne entre les manager ou master : port 2377 TCP
+-- communication entre  tous les noeud master et worker et entre tous : port 7946 TCP et UDP
+-- communication entre les containers qui se trouventnt sur des noeuds du clusters : port 4789 TCP et UDP
+
+
+
+########### initialiser le premier manager et lui atribuer un ip ou il sera accessible par les autres noeud workers et autres manager 
+
+# aller sur le noeud qu'on veux déclarer come master 
+# récupérer l'adresse ip du noeud , ipconfig : ... . supposons que l'id du node est 172.31.26.152 , on fera :
+docker swarm init --advertise-addr 172.31.26.152 
+
+# on peu ajouter un autre manager ou master en faisant 
+# aller sur le noeud du manager et faire 
+docker swarm join-token manager 
+
+# on peu ajouter un worker au master disponible sur 172.31.26.152 en faiusant 
+# aller sur le noeud du worker et faire 
+docker swarm join -token SWMTKN-1-xxxxxxxxxxxxxxxxxxx 172.31.26.152
+
+
+### tp  
+
+# master ip = 10.0.3.3
+# on le déclare comme master
+docker swarm init --advertise-addr 10.0.3.3
+# on récupère le code token de creation de worker
+# si on oublie le code d'ajour de worker, on peu toujours faire :
+docker swarm join-token manager
+# et il va réafficher le code token d'ajout de worker
+
+
+# dans le noeud worker , on le déclare comme worker du master 10.0.3.3
+docker swarm join --token SWMTKN-1-5m2hjlv4fk9l1m9e79eysvymu90u7ky2gdqlzf3dsclcqgpxgt-7f7rpxiymk3itakckn2jl6kxy 10.0.3.3:2377
+
+# on retourne dans le master et on vérifie 
+docker node ls 
+
+# on vois les nodes master et worker 
+
+# creer un deuxième manager 
+# on part sur le manager primaire 
+docker swarm join-token manager
+# on récupère le code token 
+# on part sur le nouveau manager reachable et on lance  le code de token récupéré dans le manager primaire (leader)
+docker swarm join --token SWMTKN-1-5m2hjlv4fk9l1m9e79eysvymu90u7ky2gdqlzf3dsclcqgpxgt-6u5ltuhq6r69ge5b1qhv3jtti 10.0.3.3:2377
+
+# on retourne dans le master leader et on vérifie 
+docker node ls 
+
+
+### promoting and demoting nodes 
+# promouvoir un noeud worker comme manager quand un noeud manager tombe, ensuite que le node magager est ralumé, alors on demoting le node Worker_devedu_temporairement-manager et on le retransforme en worker car l'autre manager qu'il avait remplacé temporairement est ralumé. 
+
+# il faut noter que les manager euvent egalement contenir des conaiter 
+# aussi quansd on souhaite demonter ou éteindre un manager, il est conseiller de le demoting vers worker et ensuite de l'étindre (ou rendre indisponible) pour réaliser sa maintenance
+
+# déclarer worker1 comme manager (promoting)
+docker node promote worker1 
+
+# déclarer worker1 comme worker  (demoting)
+docker node demote worker1 
+
+
+### pause 
+# demander aux managers (ou skeduleur) de ne pas envoyer de nouvelles taches sur un noeud worker particulier si on veux faire de la maintenance sur le worker dans l'éteindre:
+docker node update --availability pause worker2
+docker node ls 
+
+### drain 
+# liberer les contenaire sur le worker si on souhaite l'éteindre et redéployer ces containers sur d'autres nodes encore actif. # par defaut kubernetess ne veux pas que des containaires (ou des pods dans le langage kubernetess) ou application soient lancé sur le node manager et donc il le drainpar défaut pour qu'il de lance pas d'application afin qu'il soit dédié uniquement au management :
+docker node update --availability drain manager
+docker node ls 
+
+# quand on le ralume, et on a fini notre maintenance, on peux activer à nouveaux le worker :
+docker node update --availability active worker2
+
+
+
+#### removing node 
+# decommisionner un node 
+# faire le drain, 
+# si le node était un manager, alors on le demoting et il deviens worker_i 
+# on part sur le worker_i et on lui demande de quitter le cluster (ne plus être node du cluster) avec : 
+docker swarm leave
+# on repare sur le manager et on demande au manager de le suprimer de la liste des nodes connus : 
+docker node rm worker_i 
+#> ou ocker node rm -force worker_i 
+
+
+### grouper des nodes par label 
+# ajouter les worker1 et worker3 à un même label nommé frontend 
+docker node update --label-add frontend worker1
+docker node update --label-add frontend worker3
+
+# on defini que worker2 appartien à 2 groupes de label : backend et prod 
+docker node update --label-add backend --label-add env=prod worker2
+
+# on affiche les label appliqué sur le worker2
+docker node inspect --format '{{.Spec.Labels}}' worker2
+
+# suprimer un node worker2 du label backend
+docker node update --label-rm backend worker2
+
+
+# tp
+# sur le noeud leader 
+docker swarm init --advertise-addr 10.0.1.3
+
+# sur le worker
+docker swarm join --token SWMTKN-1-0s5o1194sx1oo3k22s2z3v4i6050rs9cj1edmukf885q5uni38-b0x81xeqo5fruupleaumpvjz3 10.0.1.3:2377
+
+# sur le noeud leader
+docker node ls 
+docker node promote node2
+docker node update --availability drain node2
+docker node ls 
+docker node demote node2 
+docker node ls 
+
+# sur le worker
+docker swarm leave
+
+# sur le noeud leader 
+docker node rm node2
+
+
+### backup er recovery 
+
+## backup à un instant t (sauvegarder les infos sur les worker, mais ne sauvegarde pas les api en fonctionnement), c'est pour cela qu'il faut versionner ses applications sur github et les charger au lancement en telechargeant le github 
+- get unlock key si on l'avait activé la fonction autolock lors de la création du cluster swarm
+- stoper le manager que l'on souhaite backuper (un des managers à backuper)
+- on backup (sauvegarde) le dossier < /var/lib/docker/swarm > sur une clé usb ou sur un disque externe de sauvegarde 
+- retart the manager (redémarer le manager)
+
+## recovery (recharger une sauvegarde backup sur notre cluster, ou simplement restaurer notre cluster, forcer sa réinitialisation )
+- si pahasard notre cluster tombe et le quorum n'est plus atteint 
+- on va essayer de redémarer les manager pour ateindre le quorum 
+- siaprès redemarage, le quorum n'est toujours pas atteint, alors on restaure le cluster avec le backup de la dernière sauvegarde du cluster 
+- pour cela, on stopr docker sur les manager, 
+- on restore de dossier swarm en copiant le backup de la clé usb vers le dossier < /var/lib/docker/swarm > sur le manager 
+- réinitialiser le cluster en faisant : 
+docker swarm init --force-new-cluster --advertise-addr manager 
+
+
+## backup service et application
+# PS: docker swarm n'est ne sauvegarde pas les données de nos appication, base de données, ou autres fichiers de nos applications, alors il faut manuellement mettre en place un systeme de sauvegarde de ces données. 
+- sauvegarder no dockerfile ou docker-compose sur un gith, 
+- sauvegarder (backuper) des données interne des application base de données ou autre fichier lié à nos applicatif 
+- créer un Cron ou netbackup ou vim , un utilitaire particulier de backp qui sauvegardent à interval de temps régulier.
+
+
+# TP 
+# créer un cluster 
+#> sur le noeud leader 
+docker swarm init --advertise-addr 10.0.0.3
+
+#> sur le worker
+docker swarm join --token SWMTKN-1-0xj1b5ag9ypfsw2wo4f35o5hawokip8fj53xwh5zbpro87mb20-cupikxjmvkyoosutaa9emwtkw 10.0.0.3:2377
+
+#> sur le noeud leader 
+docker node ls
+
+
+# archiver une base raft d'un cluster 
+#> sur le noeud leader
+	#> créer un fichier compressé du dossier à archiver : compresser le dosser < /var/lib/docker/swarm > vers un fichier nommé < swarm-backup.tar.gz > et le mettre à l'adresse < /tmp/swarm-backup.tar.gz >
+ 
+tar -czvf /tmp/swarm-backup.tar.gz /var/lib/docker/swarm
+
+	#> charger ou uploader le fichier backup compressé vers une clé usb ou un serveur distant de sauvegar de des backup . dans notre tp, on va utiliser un service de sauvegarde nommé https://transfer.sh et on le nomme swarm-backup.tar.gz sur le service https://transfer.sh aussi.
+curl --upload-file /tmp/swarm-backup.tar.gz https://transfer.sh/swarm-backup.tar.gz
+	#> on sauvegarde l'addresse de l'id de sauvegarde renvoyé par le transfert sh après le curl (https://transfer.sh/IUj49j/swarm-backup.tar.gz ) afin de pouvoir retrouver ou est sauvegardé notre backup plus tard. 
+
+
+
+# suprimer le noeud master (pour créer comme s'il y a eu un incident et le noeud est tombé tout seul)
+	#> delete , on suprime le noeud master leader ( on étein la machine master leader )
+	#> il nous reste donc juste le noeud worker 
+
+# restorer le dossier backup sauvegardé (archivé) 
+	#> on deploye un nouveau noeud, on alume une nouvelle machine et on part sur le nouveau noeud que l'on souhaite déclarer comme master pour relancer le cluster 
+	#> on recupère notre backup sauvegardé sur transfert.sh, on la copie sur notre node et on la nomme "swarm-backup.tar.gz" 
+curl https://transfer.sh/IUj49j/swarm-backup.tar.gz --output swarm-backup.tar.gz
+
+	#> on vérifie si le dossier "/var/lib/docker/swarm" est bien vide 
+ls /var/lib/docker/swarm
+
+
+	#> on va décompresser le fichier "swarm-backup.tar.gz" qu'on vien de télécharger vers le dossier "/var/lib/docker/swarm" 
+tar -xzvf swarm-backup.tar.gz -C /var/lib/docker/swarm/
+ls /var/lib/docker/swarm
+	#> on vois que le dossier n'est plus vide 
+
+
+
+# relancer le cluster 
+	#> quand on faite  < docker node ls > on a un message d'erreur, c'est normale car on n'a pas encore relancer le swarm sur notre nouveau node. Mais attention ne pa faire un <docker swarm init> car cette commande var créer un nouveau cluster swarm avec de nouvelles clées de chiffrement et va écraser le backup dans </var/lib/docker/swarm/> or nous nous ne voulons pas ca, on veut continuer l'utilisation de notre backup pour continuer l'exécution de nos anciens workers. Pour cela, on fait 
+
+	#> si l'adersse ip du node manager est 10.0.0.3
+	#> on reste sur le node mlanager et on fait 
+docker swarm init --force-new-cluster --advertise-addr 10.0.0.3
+	#> il renvoie le token pour ajouter un worker : 
+	< docker swarm join --token SWMTKN-1-3fhajk3o8mzchaephv1cjvevh1t79dy8td6txkhz34ts8wf0u7-0oaag2xar7j5gu22mntdt8qbi 10.0.0.3:2377 >
+
+	#> le --force-new-cluster lui di de ne plus considérer les anciens manager ni l'ancien leader manager, mais de se considérer comme le premier node manager (leader) mais qu'il a les données du précédents cluster. 
+
+docker node ls
+
+	#> on par sur chacun des worker et on les redéclare dans le node réinitialisé en faisant : 
+	#> on dit au worket de sortir de l'ancien cluster swarm
+docker swarm leave
+
+	# on 'ajoute au nouveau cluster réinitialisé 
+docker swarm join --token SWMTKN-1-3fhajk3o8mzchaephv1cjvevh1t79dy8td6txkhz34ts8wf0u7-0oaag2xar7j5gu22mntdt8qbi 10.0.0.3:2377
+
+#> on par sur chacun des autre manager aussi et on redéclare aussi les ancien manager allumé comme appartenant déshormain au node du nouveau manager leader 
+#> on le demoting et in devien worker,
+#> on le leave 
+#> on le redéclare manager du nouveau cluster réinitialisé 
+
+
+
+
+### service 
+## pour déployer des API sur docker swarm
+
+# pour créer ou déployer des API sur docker swarm, on parle de déployer ou de crér un service et on fait : 
+docker service create 
+
+# creer un service nommé web1 qui charge l'image nginx dans les images docker 
+docker service create --name web1 nginx
+
+# exposer le port 80 du service ou container vers le port 443 de l'hosts
+docker service create --name web1 -p 80 -p 443 nginx
+
+
+# creée 2 replicats du service (2 instances du service, du site web1)
+docker service create --replicats 2 --name web1 -p 80 -p 443 nginx
+
+# mettre à jour le nombre de replicats à 3
+docker service update --replicats 3 web1
+
+# afficher les services en cours d'exécution il va afficher que le service ou api web1 est en cour d'exécution 
+docker services ls
+
+
+# affichier lers instances du service web1 en cours d'exécution : il va afficher toutes ses instances ou réplicats en cours d'exécution et numéroté web1.1, web1.2, web1.3 ainsi que les worker sur lesquels ils sont exécuté, nontons qu'il peu arriver qu"on ai plusieur replicats d'un meme service ou api sur un même worker : 
+docker service ps web1 
+
+
+## service global 
+# ce type de service sera déployé sur l'enseble de nos workers (tous nos workers) 
+docker service create --mode global --name monitor nginx 
+
+
+# notre manager est par défaut en mode drain, donc il n'y a pas d'api qui s'exécute dessus, il fait uniquement de l'orchestration, maintenant si on weux qu'exécute aussi des service ou api que font les worker to en restant manager, alors on le rend disponible our prendre et exécuter des taches :
+docker node update --availability active manager 
+#> biensure manager = ip du manager 
+
+
+
+## constraints (les contraintes) : == , != ,  https://docs.docker.com/engine/reference/commandline/service_create/
+# conditionner l'exécution d'un service sur des labels ou groupds de nodes spécifique. Il cherche les labels dont env == prod et il les utilise comme sous groupe de cluster (ces nodes ayant le même label) et il y exécute le service demandé 
+docker service create --constraint "node.labels.env == prod" --name web-prod --replicas 2 nginx 
+
+# ajouter un nouveau label à worker1
+docker node update --label-add env=testing worker1
+
+
+
+
+## suprimer un service u le stoper 
+
+# supprimer le service  web1
+docker service rm web1
+
+# si on souhaite stopper sans le suprimer, alors mettre le replicas à  0 
+dpcker service update --replicas 0 web1 
+
+# et poour le réactiver, mettre replicas >=1
+dpcker service update --replicas 1 web1 
+
+# afficher les instance du service web1 
+docker service ps web1 
+
+
+
+## update strategy :  passer mes api de la v1 à v2 
+
+# --update-delay : le temps pour mettre à jour la nouvelle version , passer de v1 à v2 
+# exemple attendre 30 secondes avant de update la task on instance suivande 
+# en cas d'eeruer trouver, mettre en pause :
+--update-failure-action : pause ou continue 
+# wuand je veux upgrade plussieurs task ou instance à la fois, par exemple 2 à la fois :
+--update-parallelism 
+# on faity ainsi progressivement pour éviter de coupure de service chez le client final si on update tous les stak ou instance d'un coup à la fois 
+
+
+
+# tp 
+# j'initialise mon cluster 
+	#> sur le noeud leader
+	docker swarm init --advertise-addr 10.0.0.3
+	# docker swarm join --token SWMTKN-1-5mp33p1zysz5qrq94jax6ubttho0owp56muudmsz676yo8ot82-e8bodgy6fri7gn32nvb7eyjzm 10.0.0.3:2377
+	
+	#> sur le noeud worker 
+	docker swarm join --token SWMTKN-1-5mp33p1zysz5qrq94jax6ubttho0owp56muudmsz676yo8ot82-e8bodgy6fri7gn32nvb7eyjzm 10.0.0.3:2377
+		
+	
+# deployer un service en utilisant l'image nginx:1.18 avec 2 replicas 
+	#> sur le noeud leader
+	docker node ls 
+	docker service create --name webapp --replicas 2 --constraint "node.hostname == node2" -p 80:80 nginx:1.18
+	
+	
+# se rassurer que le deploiement sera fait uniquement sur le worker1
+# quand on est sur le node manager leader 
+	#> sur le noeud leader
+	curl 10.0.0.3:80
+	ou quand on est sur le node2 worker
+	#> sur le noeud worker 
+	curl 127.0.0.1
+
+	#> sur le noeud leader
+	docker service ls
+	docker node ps node2
+	docker service ps webapp
+
+
+# update le deployement en utilisant l'image nginx:1.20 . 
+#il va arreter progressivement les ancien stak et deployer les nouveaux avec la nouvelle version 1.20
+	#> sur le noeud leader
+	docker service update --image nginx:1.20 webapp 
+
+
+# vérifier que la nouvelle image est bien utilisée 
+	#> on vois bien sue les 1.18 on été stopé et ce sont les 1.20 qui sont sont en cours d'exécution 
+	#> sur le noeud leader
+	docker service ps webapp
+	curl 10.0.0.3:80
+	
+	
+# faire un retour en arrière (rooback); retourner à la version 1.18 , retourner à l'état avant la dernière mise à jour 
+	#> sur le noeud leader
+	docker service rollback webapp 
+	# on vois bien qu'il est retourné à l'état précédent avec une image 1.18 en cour d'exécution 
+	#> sur le noeud leader
+	docker service ls
+	docker node ps node2
+	#> sur le noeud worker
+	docker ps
+	docker ps -a 
+
+
+
+
+### docker-compose : ses spécificité avec docker swarm 
+# installer docker compose 
+	#> sur le noeud leader
+	https://docs.docker.com/compose/install/other/
+	
+
+
+# deployer l'api de gestion de vote sur https://github.com/dockersamples/example-voting-app.git 
+	# on peu lire https://github.com/dockersamples/example-voting-app/blob/main/docker-stack.yml pour comprendre comment c'est écrit, les contidion du swarm sont mis dans le sous group "deploy" dans docker compose 
+	
+	#> sur le noeud leader
+	vi docker-compose.yml 
+	curl https://github.com/dockersamples/example-voting-app/blob/main/docker-stack.yml --output docker-compose.yml 
+	
+	# deployer un stake nommmé "vote". "vote_" sera pris comme prefix des services 
+	docker stack deploy -c docker-compose.yml vote 
+	docker service ls 
+	docker service ls vote_
+	docker service ls vote_db
+	
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
