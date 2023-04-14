@@ -32,7 +32,7 @@ docker login registry.gitlab.com
 
 # pour pusher une image , il faut d'abor le taguer vers le registry ou il sera pusher
 docker tag "chemin du registry + chemin du projet"/nom_image:version_image 
-docker push "chemin du registry + chemin du projet"/nom_image:version_image 
+docker push "registry.gitlab.com/ainakikisagbe/project_name"/nom_image:version_image 
 
 docker tag "chemin du registry + chemin du projet"/worcker_finish:v1.0 
 docker push "chemin du registry + chemin du projet"/worcker_finish:v1.0 
