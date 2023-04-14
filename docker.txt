@@ -1,0 +1,45 @@
+
+
+### créer l'image 
+docker build --no-cache -t worker_finish .
+ou 
+docker build -t worker_finish .
+
+
+# lister les images disponibles 
+docker image ls 
+ou
+docker images 
+
+# par defaut , docker run cherche l'image avec le tag "latest" 
+docker run -itd worcker_finish 
+correspond à : 
+docker run -itd worcker_finish:latest
+
+# si l'image n'a pas de version avec le tag latest, il faudra spécifier 
+docker run -itd worcker_finish:v1.0
+
+# faisons une copy de l'image tagué "v1.0" et taguons la nouvelle image "latest"
+docker tag worcker_finish:v1.0  worcker_finish:latest
+
+# vérifions en affichent :
+docker image ls 
+
+### pour charger une image sur un régiostrie particulier, :
+docker login "chemin du registry"
+docker login registry.gitlab.com
+## si onn ne précise pas de registry, docker utiliser le registry "hub.docker" par défaut
+
+# pour pusher une image , il faut d'abor le taguer vers le registry ou il sera pusher
+docker tag "chemin du registry + chemin du projet"/nom_image:version_image 
+docker push "chemin du registry + chemin du projet"/nom_image:version_image 
+
+docker tag "chemin du registry + chemin du projet"/worcker_finish:v1.0 
+docker push "chemin du registry + chemin du projet"/worcker_finish:v1.0 
+
+docker tag "chemin du registry + chemin du projet"/worcker_finish:latest 
+docker push "chemin du registry + chemin du projet"/worcker_finish:latest 
+
+### pour charger (load) l'image , on fait un pull et on spécifie le chemin du registry 
+docker pull "chemin du registry + chemin du projet"/worcker_finish:latest
+
